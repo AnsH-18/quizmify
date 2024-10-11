@@ -11,7 +11,7 @@ import {
 import { getServerSession } from "next-auth";
 const queryClient = new QueryClient();
 
-const Providers = async ({ children }: ThemeProviderProps) => {
+const Providers =  ({ children }: ThemeProviderProps) => {
   return (
     <QueryClientProvider client={queryClient}>
       <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
