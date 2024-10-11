@@ -8,13 +8,15 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
+import { getServerSession } from "next-auth";
 const queryClient = new QueryClient();
 
-const Providers = ({ children }: ThemeProviderProps) => {
+const Providers = async ({ children }: ThemeProviderProps) => {
+  const session = await getServerSession()
   return (
     <QueryClientProvider client={queryClient}>
       <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider >{children}</SessionProvider>
       </NextThemesProvider>
     </QueryClientProvider>
   );
