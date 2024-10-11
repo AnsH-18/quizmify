@@ -14,7 +14,7 @@ export async function strict_output(
   output_format: OutputFormat,
   default_category: string = "",
   output_value_only: boolean = false,
-  model: string = "gemini-1.5-flash",  // Default model for Gemini
+  model: string = "gemini-1.5-flash",
   temperature: number = 1,
   num_tries: number = 3,
   verbose: boolean = false
@@ -55,7 +55,12 @@ export async function strict_output(
       const result = await modelInstance.generateContent(prompt);
       const responseText = await result.response.text();
       let res: string = responseText.replace(/'/g, '"');
-      res = res.replace(/(\w)"(\w)/g, "$1'$2"); // Prevent replacing apostrophes in words
+      res = res.replace(/(\w)"(\w)/g, "$1'$2");
+
+      // Clean up the JSON string
+      res = res.replace(/\n/g, "").trim();
+      if (!res.startsWith("[")) res = "[" + res;
+      if (!res.endsWith("]")) res = res + "]";
 
       if (verbose) {
         console.log("System prompt:", system_prompt + output_format_prompt + error_msg);
@@ -64,7 +69,26 @@ export async function strict_output(
       }
 
       // Attempt to parse the response into JSON
-      let output: any = JSON.parse(res);
+      let output: any;
+      try {
+        output = JSON.parse(res);
+        console.log(output)
+      } catch (parseError) {
+        console.error("JSON parse error:", parseError);
+        console.log("Attempting to fix JSON...");
+        
+        // Attempt to fix common JSON issues
+        res = res.replace(/,\s*}/g, "}");  // Remove trailing commas
+        res = res.replace(/,\s*\]/g, "]");  // Remove trailing commas in arrays
+        res = res.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');  // Wrap unquoted keys in double quotes
+        
+        try {
+          output = JSON.parse(res);
+        } catch (secondParseError) {
+          console.error("Failed to fix JSON:", secondParseError);
+          throw new Error("Unable to parse JSON after attempted fixes");
+        }
+      }
 
       if (list_input) {
         if (!Array.isArray(output)) {
@@ -73,7 +97,6 @@ export async function strict_output(
       } else {
         output = [output];
       }
-
       for (let index = 0; index < output.length; index++) {
         for (const key in output_format) {
           if (/<.*?>/.test(key)) continue;
