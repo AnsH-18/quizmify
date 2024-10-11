@@ -1,14 +1,11 @@
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
 interface OutputFormat {
   [key: string]: string | string[] | OutputFormat;
 }
 
-// Add this function to create a delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function strict_output(
@@ -17,24 +14,18 @@ export async function strict_output(
   output_format: OutputFormat,
   default_category: string = "",
   output_value_only: boolean = false,
-  model: string = "gpt-3.5-turbo",    
+  model: string = "gemini-1.5-flash",  // Default model for Gemini
   temperature: number = 1,
   num_tries: number = 3,
   verbose: boolean = false
-): Promise<
-  {
-    question: string;
-    answer: string;
-  }[]
-> {
-  // if the user input is in a list, we also process the output as a list of json
+): Promise<{
+  question: string;
+  answer: string;
+}[]> {
   const list_input: boolean = Array.isArray(user_prompt);
-  // if the output format contains dynamic elements of < or >, then add to the prompt to handle dynamic elements
   const dynamic_elements: boolean = /<.*?>/.test(JSON.stringify(output_format));
-  // if the output format contains list elements of [ or ], then we add to the prompt to handle lists
   const list_output: boolean = /\[.*?\]/.test(JSON.stringify(output_format));
 
-  // start off with no error message
   let error_msg: string = "";
 
   for (let i = 0; i < num_tries; i++) {
@@ -46,47 +37,33 @@ export async function strict_output(
       output_format_prompt += `\nIf output field is a list, classify output into the best element of the list.`;
     }
 
-    // if output_format contains dynamic elements, process it accordingly
     if (dynamic_elements) {
       output_format_prompt += `\nAny text enclosed by < and > indicates you must generate content to replace it. Example input: Go to <location>, Example output: Go to the garden\nAny output key containing < and > indicates you must generate the key name to replace it. Example input: {'<location>': 'description of location'}, Example output: {school: a place for education}`;
     }
 
-    // if input is in a list format, ask it to generate json in a list
     if (list_input) {
-      output_format_prompt += `\nGenerate a list of json, one json for each input element.`;
+      output_format_prompt += `\nGenerate a list of json objects, one json object for each input element.`;
     }
 
-    // Add a delay before making the API call (e.g., 1 second)
     await delay(1000);
 
-    // Use OpenAI to get a response
-    const response = await openai.chat.completions.create({
-      temperature: temperature,
-      model: model,
-      messages: [
-        {
-          role: "system",
-          content: system_prompt + output_format_prompt + error_msg,
-        },
-        { role: "user", content: user_prompt.toString() },
-      ],
-    });
+    // Use Gemini API to get a response
+    const prompt = system_prompt + output_format_prompt + error_msg + "\n\n" + user_prompt.toString();
+    const modelInstance = genAI.getGenerativeModel({ model });
 
-    let res: string = response.choices[0].message?.content?.replace(/'/g, '"') ?? "";
-    // ensure that we don't replace away apostrophes in text
-    res = res.replace(/(\w)"(\w)/g, "$1'$2");
-
-    if (verbose) {
-      console.log(
-        "System prompt:",
-        system_prompt + output_format_prompt + error_msg
-      );
-      console.log("\nUser prompt:", user_prompt);
-      console.log("\nGPT response:", res);
-    }
-
-    // try-catch block to ensure output format is adhered to
     try {
+      const result = await modelInstance.generateContent(prompt);
+      const responseText = await result.response.text();
+      let res: string = responseText.replace(/'/g, '"');
+      res = res.replace(/(\w)"(\w)/g, "$1'$2"); // Prevent replacing apostrophes in words
+
+      if (verbose) {
+        console.log("System prompt:", system_prompt + output_format_prompt + error_msg);
+        console.log("\nUser prompt:", user_prompt);
+        console.log("\nGemini response:", res);
+      }
+
+      // Attempt to parse the response into JSON
       let output: any = JSON.parse(res);
 
       if (list_input) {
@@ -97,41 +74,30 @@ export async function strict_output(
         output = [output];
       }
 
-      // check for each element in the output_list, the format is correctly adhered to
       for (let index = 0; index < output.length; index++) {
         for (const key in output_format) {
-          // unable to ensure accuracy of dynamic output header, so skip it
-          if (/<.*?>/.test(key)) {
-            continue;
-          }
+          if (/<.*?>/.test(key)) continue;
 
-          // if output field missing, raise an error
           if (!(key in output[index])) {
             throw new Error(`${key} not in json output`);
           }
 
-          // check that one of the choices given for the list of words is an unknown
           if (Array.isArray(output_format[key])) {
             const choices = output_format[key] as string[];
-            // ensure output is not a list
             if (Array.isArray(output[index][key])) {
               output[index][key] = output[index][key][0];
             }
-            // output the default category (if any) if GPT is unable to identify the category
             if (!choices.includes(output[index][key]) && default_category) {
               output[index][key] = default_category;
             }
-            // if the output is a description format, get only the label
             if (output[index][key].includes(":")) {
               output[index][key] = output[index][key].split(":")[0];
             }
           }
         }
 
-        // if we just want the values for the outputs
         if (output_value_only) {
           output[index] = Object.values(output[index]);
-          // just output without the list if there is only one element
           if (output[index].length === 1) {
             output[index] = output[index][0];
           }
@@ -140,9 +106,9 @@ export async function strict_output(
 
       return list_input ? output : output[0];
     } catch (e) {
-      error_msg = `\n\nResult: ${res}\n\nError message: ${e}`;
+      error_msg = `\n\nResult:\n\nError message: ${e}`;
       console.log("An exception occurred:", e);
-      console.log("Current invalid json format:", res);
+      console.log("Current invalid json format:");
     }
   }
 
