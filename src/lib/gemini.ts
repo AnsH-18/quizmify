@@ -53,7 +53,7 @@ export async function strict_output(
 
     try {
       const result = await modelInstance.generateContent(prompt);
-      const responseText = await result.response.text();
+      const responseText = result.response.text();
       let res: string = responseText.replace(/'/g, '"');
       res = res.replace(/(\w)"(\w)/g, "$1'$2");
 
@@ -72,7 +72,7 @@ export async function strict_output(
       let output: any;
       try {
         output = JSON.parse(res);
-        console.log(output)
+        console.log(output  )
       } catch (parseError) {
         console.error("JSON parse error:", parseError);
         console.log("Attempting to fix JSON...");
