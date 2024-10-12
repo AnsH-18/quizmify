@@ -72,8 +72,9 @@ export async function strict_output(
       let output: any;
       try {
         output = JSON.parse(res);
-        console.log(output  )
+        console.log(output)
       } catch (parseError) {
+        console.log(JSON.parse(res))
         console.error("JSON parse error:", parseError);
         console.log("Attempting to fix JSON...");
         
